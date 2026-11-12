@@ -1,7 +1,7 @@
 # Синтаксический анализатор кода
 https://an-core.github.io/check_code/
 
-Веб-приложение для быстрой проверки синтаксиса и форматирования кода на нескольких языках программирования прямо в браузере.
+[Веб-приложение](https://an-core.github.io/check_code/) для быстрой проверки синтаксиса и форматирования кода на нескольких языках программирования прямо в браузере.
 
 ![HTML5](https://img.shields.io/badge/HTML5-orange?logo=html5&logoColor=white)
 ![CSS3](https://img.shields.io/badge/CSS3-blue?logo=css3&logoColor=white)
