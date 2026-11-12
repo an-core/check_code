@@ -6,7 +6,9 @@
 <p align="center">
 <img width="1073" height="713" alt="check_code" src="https://github.com/user-attachments/assets/e5edea8c-7776-49ae-a27d-8e0832708abc" />
 </p>
+
 ---
+
 ## Возможности
 
 - **Проверка синтаксиса** - быстрый разбор кода с подсветкой строк, в которых найдены ошибки
