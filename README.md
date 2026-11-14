@@ -43,7 +43,7 @@
 ## Технологии
 
 - **Vanilla JavaScript** - без фреймворков
-- **CodeMirror 5 - редактор кода с подсветкой синтаксиса и нумерацией строк
+- CodeMirror 5 - редактор кода с подсветкой синтаксиса и нумерацией строк
 - **Acorn** - парсер JavaScript
 - **js-beautify** - форматирование JS, CSS и HTML
 - **DOMParser / CSSStyleSheet / JSON** - встроенные браузерные API для валидации
