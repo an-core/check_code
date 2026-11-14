@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Синтаксический анализатор кода</title>
+		<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 5 L58 42 L95 50 L58 58 L50 95 L42 58 L5 50 L42 42 Z' fill='%2360a5fa'/%3E%3C/svg%3E">
+        <link rel="stylesheet" href="styles.css">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"> </script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify.min.js"> </script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify-css.min.js"> </script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify-html.min.js"> </script>
+
+    </head>
+
+    <body>
+
+        <div class="app">
+
+            <header class="header">
+                <h1>✦ Синтаксический анализатор</h1>
+                <span class="sub">Проверка кода на ошибки в HTML, CSS, JavaScript и других языках</span>
+            </header>
+
+            <div class="toolbar">
+                <label>
+                    Язык
+                    <select id="langSelect">
+                        <option value="auto">Авто</option>
+                        <option value="html">HTML</option>
+                        <option value="htm">HTM</option>
+                        <option value="css">CSS</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="json">JSON</option>
+                        <option value="xml">XML</option>
+                        <option value="svg">SVG</option>
+                        <option value="bat">BAT</option>
+                        <option value="cpp">C++</option>
+                    </select>
+                </label>
+
+                <label>
+                    Отступ
+                    <select id="indentSizeSelect">
+                        <option value="2">2</option>
+                        <option value="4" selected>4</option>
+                        <option value="8">8</option>
+                    </select>
+                </label>
+
+                <button class="btn-primary" id="checkBtn">Проверить</button>
+                <button class="btn-secondary" id="formatBtn">Форматировать</button>
+                <button class="btn-copy" id="copyBtn">Копировать</button>
+                <button class="btn-secondary" id="clearBtn">Очистить</button>
+                <button class="btn-w3c-manual" id="w3cManualBtn">Открыть W3C</button>
+
+                <span class="lang-badge" id="detectedLang">не определён</span>
+            </div>
+
+            <div class="editor-wrap">
+                <div class="editor-container" id="editorContainer">
+                    <div class="line-numbers" id="lineNumbers"></div>
+                    <textarea id="codeInput" placeholder="Вставьте код для проверки…&#10;Поддерживаются: HTML, CSS, JavaScript, JSON, XML, SVG, BAT, C++" spellcheck="false"></textarea>
+                </div>
+                <div class="status-bar">
+                    <div class="stats">
+                        <span>Символов: <span class="num" id="charCount">0</span></span>
+                        <span>Строк: <span class="num" id="lineCount">0</span></span>
+                    </div>
+                    <div id="editorStatus">готов</div>
+                </div>
+            </div>
+
+            <div class="results">
+                <div class="results-header">
+                    <span>Результат проверки</span>
+                    <span class="badge" id="resultBadge">ожидание</span>
+                </div>
+                <div class="results-body" id="resultsBody">
+                    <span class="empty">Вставьте код в редактор и нажмите «Проверить»</span>
+                </div>
+            </div>
+        </div>
+        <script type="module" src="functions.js"></script>
+    </body>
+
+</html>
