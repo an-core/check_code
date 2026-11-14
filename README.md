@@ -9,6 +9,9 @@
 <p align="center">
 <img width="1083" height="718" alt="check_code_go" src="https://github.com/user-attachments/assets/260ad216-2530-4d22-b710-43c300c48e73" />
 </p>
+<p align="center">
+<img width="1091" height="717" alt="check_code_rust" src="https://github.com/user-attachments/assets/9f3aec1b-07f6-48f0-9cf2-facb15e7c78e" />
+</p>
 
 ## Возможности
 - **Проверка синтаксиса** - быстрый разбор кода с подсветкой строк, в которых найдены ошибки
