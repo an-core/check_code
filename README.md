@@ -10,7 +10,7 @@
 <img width="1083" height="718" alt="check_code_go" src="https://github.com/user-attachments/assets/260ad216-2530-4d22-b710-43c300c48e73" />
 </p>
 <p align="center">
-<img width="1075" height="720" alt="check_code_rust" src="https://github.com/user-attachments/assets/71eb6855-8fdd-4710-98e4-8bad6aa2d1bf" />
+<img width="1075" height="720" alt="check_code_rust" src="https://github.com/user-attachments/assets/0b6a420e-f3a3-45bd-83f7-2ee9c378d26c" />
 </p>
 
 ## Возможности
