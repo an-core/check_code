@@ -4,7 +4,10 @@
 
 ---
 <p align="center">
-<img width="1073" height="713" alt="check_code" src="https://github.com/user-attachments/assets/e5edea8c-7776-49ae-a27d-8e0832708abc" />
+<img width="1084" height="716" alt="check_code_css" src="https://github.com/user-attachments/assets/fed319cf-d93e-45a5-abd2-27765c5866e3" />
+</p>
+<p align="center">
+<img width="1083" height="718" alt="check_code_go" src="https://github.com/user-attachments/assets/260ad216-2530-4d22-b710-43c300c48e73" />
 </p>
 
 ## Возможности
