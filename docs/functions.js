@@ -4,8 +4,8 @@
     function cleanInput(text) {
         return text.replace(/^[\uFEFF\u200B\u2060\uFFF9-\uFFFB\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F]+/, '').trimStart();
     }
+
     const codeInput = document.getElementById('codeInput');
-    const lineNumbers = document.getElementById('lineNumbers');
     const langSelect = document.getElementById('langSelect');
     const checkBtn = document.getElementById('checkBtn');
     const clearBtn = document.getElementById('clearBtn');
@@ -23,6 +23,27 @@
     let lastResult = [];
     let copyTimeout = null;
     let errorLines = [];
+    let currentMode = 'htmlmixed';
+
+    const cm = CodeMirror.fromTextArea(codeInput, {
+        lineNumbers: true,
+        mode: 'htmlmixed',
+        theme: 'material-darker',
+        indentUnit: 4,
+        tabSize: 4,
+        lineWrapping: false,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        extraKeys: {
+            'Ctrl-Enter': function() {
+                runCheck();
+            },
+            'Cmd-Enter': function() {
+                runCheck();
+            }
+        }
+    });
+    cm.setSize('100%', '100%');
 
     function pluralize(num, one, few, many) {
         if (num % 10 === 1 && num % 100 !== 11) return one;
@@ -30,44 +51,59 @@
         return many;
     }
 
-    function updateLineNumbers(errorLinesArray) {
-        if (!errorLinesArray) errorLinesArray = [];
-        const text = codeInput.value;
-        const lines = text.split('\n');
-        const errorSet = new Set(errorLinesArray);
-        let html = '';
-        for (let i = 1; i <= lines.length; i++) {
-            const cls = errorSet.has(i) ? ' error-line' : '';
-            html += `<span class="line-num${cls}">${i}</span>`;
+    function markErrorLines(arr) {
+        for (let i = 0; i < cm.lineCount(); i++) {
+            cm.removeLineClass(i, 'background', 'cm-error-line');
         }
-        lineNumbers.innerHTML = html;
-        syncScroll();
-        charCount.textContent = text.length;
-        lineCount.textContent = lines.length;
+        (arr || []).forEach(n => {
+            const idx = n - 1;
+            if (idx >= 0 && idx < cm.lineCount()) {
+                cm.addLineClass(idx, 'background', 'cm-error-line');
+            }
+        });
+        errorLines = (arr || []).slice();
     }
-
-    function syncScroll() {
-        lineNumbers.scrollTop = codeInput.scrollTop;
-    }
-
-    codeInput.addEventListener('scroll', syncScroll);
-    codeInput.addEventListener('input', function() {
-        errorLines = [];
-        updateLineNumbers([]);
-        updateDetectedLang();
-    });
-
-    window.addEventListener('load', function() {
-        updateLineNumbers([]);
-        updateDetectedLang();
-        updateStats();
-    });
 
     function updateStats() {
-        const text = codeInput.value;
+        const text = cm.getValue();
         charCount.textContent = text.length;
         lineCount.textContent = text.split('\n').length;
     }
+
+    function setEditorMode(lang) {
+        const map = {
+            html: 'htmlmixed',
+            htm: 'htmlmixed',
+            xml: 'xml',
+            svg: 'xml',
+            css: 'css',
+            javascript: 'javascript',
+            json: {
+                name: 'javascript',
+                json: true
+            },
+            python: 'python',
+            go: 'go',
+            rust: 'rust',
+            cpp: 'text/x-c++src',
+            bat: null
+        };
+        let mode = map[lang];
+        if (mode === undefined) mode = 'htmlmixed';
+
+        const key = mode === null ? 'null' :
+            typeof mode === 'object' ? 'json' : mode;
+        if (key === currentMode) return;
+
+        cm.setOption('mode', mode);
+        currentMode = key;
+    }
+
+    cm.on('change', function() {
+        markErrorLines([]);
+        updateDetectedLang();
+        updateStats();
+    });
 
     function detectLanguage(text) {
         if (!text || text.trim() === '') return 'unknown';
@@ -86,17 +122,78 @@
             } catch (_) {}
         }
 
+        // Rust
+        const rustPatterns = [
+            /\bfn\s+\w+\s*[<(]/,
+            /\blet\s+mut\s+\w+/,
+            /\buse\s+std::/,
+            /\bimpl\s+\w+/,
+            /\bpub\s+fn\s+/,
+            /#\[derive\(/,
+            /\.unwrap\(\)/
+        ];
+        if (rustPatterns.some(p => p.test(trimmed))) return 'rust';
+
+        // Go
+        if (/^\s*package\s+\w+/m.test(trimmed)) {
+            const goSignals = [
+                /\bfunc\s+\w+\s*\(/,
+                /:=/,
+                /\bfmt\./,
+                /^\s*import\s+\(/m,
+                /\bgo\s+func\s*\(/
+            ];
+            if (goSignals.some(p => p.test(trimmed))) return 'go';
+        }
+
+        // Python
+        const pyPatterns = [
+            /^\s*def\s+\w+\s*\(.*\)\s*:/m,
+            /^\s*class\s+\w+.*:/m,
+            /^\s*from\s+\w+\s+import\s+/m,
+            /^\s*if\s+__name__\s*==\s*['"]__main__['"]/m
+        ];
+        if (pyPatterns.some(p => p.test(trimmed))) return 'python';
+
         // JavaScript
         const jsPatterns = [
+            // Объявления
             /\b(const|let|var)\s+[a-zA-Z_$][\w$]*\s*[=;]/,
+
+            // Функции
             /\bfunction\s*\([^)]*\)\s*{/,
             /\bfunction\s+[a-zA-Z_$][\w$]*\s*\(/,
             /=>/,
+            /\basync\s+function\b/,
+            /\bawait\s+/,
+
+            // Модули
             /\bimport\s+.*\s+from\s+['"]/,
             /\bexport\s+(default\s+)?[{a-zA-Z]/,
+            /\brequire\s*\(/,
+            /\bmodule\.exports\b/,
+
+            // Управление
             /\btry\s*\{/,
             /\bcatch\s*\(/,
-            /\breturn\s+[^;]+;/
+            /\breturn\s+[^;]+;/,
+            /\bthrow\s+new\b/,
+
+            // Браузерные/Node API
+            /\bconsole\.\w+\s*\(/,
+            /\bdocument\.\w+/,
+            /\bwindow\.\w+/,
+            /\balert\s*\(/,
+            /\bprompt\s*\(/,
+            /\bnew\s+[A-Z]\w*\s*\(/,
+            /\.addEventListener\s*\(/,
+            /\.querySelector\s*\(/,
+            /\.getElementById\s*\(/,
+
+            // Классы и операторы, характерные для JS
+            /\bclass\s+\w+\s*{/,
+            /\w+\.prototype\./,
+            /===|!==/
         ];
         if (jsPatterns.some(p => p.test(trimmed))) {
             return 'javascript';
@@ -107,7 +204,7 @@
             return 'css';
         }
 
-        // XML/SVG/HTML
+        // XML / SVG / HTML
         if (/<\/?[a-zA-Z][a-zA-Z0-9:._-]*\s*\/?>/i.test(trimmed)) {
             if (/<svg[\s>]/i.test(trimmed) && /<\/svg>/i.test(trimmed)) return 'svg';
             if (/<\?xml/i.test(trimmed)) return 'xml';
@@ -140,10 +237,8 @@
 
     function updateDetectedLang() {
         const manual = langSelect.value;
-        if (manual !== 'auto') {
-            return;
-        }
-        const text = codeInput.value;
+        if (manual !== 'auto') return;
+        const text = cm.getValue();
         const lang = detectLanguage(text);
         const map = {
             html: 'HTML',
@@ -155,151 +250,163 @@
             svg: 'SVG',
             bat: 'BAT',
             cpp: 'C++',
+            python: 'Python',
+            go: 'Go',
+            rust: 'Rust',
             unknown: 'не определён'
         };
         detectedLang.textContent = ' ' + (map[lang] || lang);
+        setEditorMode(lang);
         return lang;
     }
 
     function getEffectiveLang() {
         const manual = langSelect.value;
         if (manual !== 'auto') return manual;
-        const text = codeInput.value;
+        const text = cm.getValue();
         const detected = detectLanguage(text);
         if (detected === 'unknown' && text.trim() !== '') return 'html';
         return detected;
     }
 
-    function validateCpp(text) {
+    function scanCode(text, cfg) {
         const errors = [];
         let line = 1,
             col = 1;
-        let inSingleLineComment = false;
-        let inMultiLineComment = false;
-        let inString = false;
-        let inChar = false;
-        let stack = [];
-        let stackLine = [];
-        let stackCol = [];
+        let inLineComment = false;
+        let inBlockComment = false;
+        let activeString = null;
+        let escape = false;
+        const stack = [],
+            stackLine = [],
+            stackCol = [];
 
-        function pushBracket(ch, l, c) {
+        const pushB = (ch) => {
             stack.push(ch);
-            stackLine.push(l);
-            stackCol.push(c);
-        }
-
-        function popBracket(expected, l, c) {
+            stackLine.push(line);
+            stackCol.push(col);
+        };
+        const popB = (ch) => {
+            const expected = ch === ')' ? '(' : ch === ']' ? '[' : '{';
             if (stack.length === 0) {
                 errors.push({
-                    line: l,
-                    column: c,
-                    message: `Лишняя закрывающая скобка '${expected}'`,
+                    line,
+                    column: col,
+                    message: `Лишняя закрывающая скобка '${ch}'`,
                     severity: 'error'
                 });
-                return false;
+                return;
             }
             const top = stack.pop();
             stackLine.pop();
             stackCol.pop();
-            if ((expected === ')' && top !== '(') ||
-                (expected === ']' && top !== '[') ||
-                (expected === '}' && top !== '{')) {
+            if (top !== expected) {
                 errors.push({
-                    line: l,
-                    column: c,
-                    message: `Несоответствие скобок: ожидалась '${top === '(' ? ')' : top === '[' ? ']' : '}'}', получена '${expected}'`,
+                    line,
+                    column: col,
+                    message: `Несоответствие скобок: ожидалось закрытие для '${top}', получена '${ch}'`,
                     severity: 'error'
                 });
-                return false;
             }
-            return true;
-        }
+        };
 
         for (let i = 0; i < text.length; i++) {
             const ch = text[i];
+
             if (ch === '\n') {
                 line++;
                 col = 1;
-                if (inSingleLineComment) inSingleLineComment = false;
+                if (inLineComment) inLineComment = false;
+                if (activeString && !activeString.multiline) {
+                    errors.push({
+                        line: line - 1,
+                        column: col,
+                        message: `Незакрытая строка (${activeString.delim})`,
+                        severity: 'error'
+                    });
+                    activeString = null;
+                    escape = false;
+                }
                 continue;
             }
             col++;
 
-            if (!inSingleLineComment && !inMultiLineComment && !inString && !inChar) {
-                if (ch === '/' && i + 1 < text.length && text[i + 1] === '/') {
-                    inSingleLineComment = true;
-                    i++;
+            if (inLineComment) continue;
+
+            if (inBlockComment) {
+                if (text.startsWith(cfg.blockComment.end, i)) {
+                    inBlockComment = false;
+                    i += cfg.blockComment.end.length - 1;
+                    col += cfg.blockComment.end.length - 1;
+                }
+                continue;
+            }
+
+            if (activeString) {
+                if (escape) {
+                    escape = false;
                     continue;
                 }
-                if (ch === '/' && i + 1 < text.length && text[i + 1] === '*') {
-                    inMultiLineComment = true;
-                    i++; // пропустить *
+                if (!activeString.raw && ch === '\\') {
+                    escape = true;
                     continue;
                 }
-                if (ch === '"') {
-                    inString = true;
-                    continue;
+                if (text.startsWith(activeString.delim, i)) {
+                    i += activeString.delim.length - 1;
+                    col += activeString.delim.length - 1;
+                    activeString = null;
                 }
-                if (ch === '\'') {
-                    inChar = true;
-                    continue;
-                }
-                if (ch === '(' || ch === '[' || ch === '{') {
-                    pushBracket(ch, line, col);
-                } else if (ch === ')') {
-                    popBracket(')', line, col);
-                } else if (ch === ']') {
-                    popBracket(']', line, col);
-                } else if (ch === '}') {
-                    popBracket('}', line, col);
-                }
-            } else {
-                if (inSingleLineComment) {} else if (inMultiLineComment) {
-                    if (ch === '*' && i + 1 < text.length && text[i + 1] === '/') {
-                        inMultiLineComment = false;
-                        i++;
-                    }
-                } else if (inString) {
-                    if (ch === '\\' && i + 1 < text.length) {
-                        i++;
-                    } else if (ch === '"') {
-                        inString = false;
-                    }
-                } else if (inChar) {
-                    if (ch === '\\' && i + 1 < text.length) {
-                        i++;
-                    } else if (ch === '\'') {
-                        inChar = false;
-                    }
+                continue;
+            }
+
+            if (cfg.lineComment && text.startsWith(cfg.lineComment, i)) {
+                inLineComment = true;
+                i += cfg.lineComment.length - 1;
+                col += cfg.lineComment.length - 1;
+                continue;
+            }
+            if (cfg.blockComment && text.startsWith(cfg.blockComment.start, i)) {
+                inBlockComment = true;
+                i += cfg.blockComment.start.length - 1;
+                col += cfg.blockComment.start.length - 1;
+                continue;
+            }
+
+            let q = null;
+            for (const cand of cfg.quotes) {
+                if (text.startsWith(cand.delim, i)) {
+                    q = cand;
+                    break;
                 }
             }
+            if (q) {
+                activeString = q;
+                i += q.delim.length - 1;
+                col += q.delim.length - 1;
+                continue;
+            }
+
+            if (ch === '(' || ch === '[' || ch === '{') pushB(ch);
+            else if (ch === ')' || ch === ']' || ch === '}') popB(ch);
         }
 
-        if (inString) {
+        if (activeString) {
             errors.push({
-                line: line,
+                line,
                 column: col,
-                message: 'Незакрытая строковая константа (")',
+                message: `Незакрытая строка (${activeString.delim})`,
                 severity: 'error'
             });
         }
-        if (inChar) {
+        if (inBlockComment) {
             errors.push({
-                line: line,
+                line,
                 column: col,
-                message: 'Незакрытый символьный литерал (\')',
+                message: 'Незакрытый блочный комментарий',
                 severity: 'error'
             });
         }
-        if (inMultiLineComment) {
-            errors.push({
-                line: line,
-                column: col,
-                message: 'Незакрытый многострочный комментарий (/*)',
-                severity: 'error'
-            });
-        }
-        while (stack.length > 0) {
+        while (stack.length) {
             const top = stack.pop();
             const l = stackLine.pop();
             const c = stackCol.pop();
@@ -311,8 +418,29 @@
                 severity: 'error'
             });
         }
+        return errors;
+    }
 
-        if (errors.length === 0) {
+    function validateCpp(text) {
+        const errors = scanCode(text, {
+            lineComment: '//',
+            blockComment: {
+                start: '/*',
+                end: '*/'
+            },
+            quotes: [{
+                    delim: '"',
+                    raw: false,
+                    multiline: false
+                },
+                {
+                    delim: "'",
+                    raw: false,
+                    multiline: false
+                }
+            ]
+        });
+        if (!errors.length) {
             errors.push({
                 line: 0,
                 column: 0,
@@ -323,54 +451,141 @@
         return errors;
     }
 
-    function runCheck() {
-        const rawText = codeInput.value;
-        const cleanedText = cleanInput(rawText);
-        const lang = getEffectiveLang();
+    function validatePython(text) {
+        const errors = [];
+        const lines = text.split('\n');
+        let indentChar = null;
 
-        if (cleanedText.trim() === '') {
-            resultsBody.innerHTML = `<span class="empty">⏳ Вставьте код для проверки</span>`;
-            resultBadge.textContent = 'ожидание';
-            resultBadge.style.color = '#8b93a7';
-            editorStatus.textContent = 'пусто';
-            errorLines = [];
-            updateLineNumbers([]);
-            return;
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            const stripped = raw.replace(/^\s+/, '');
+            if (!stripped || stripped.startsWith('#')) continue;
+            const leading = raw.match(/^[ \t]*/)[0];
+            if (!leading.length) continue;
+            if (leading.includes(' ') && leading.includes('\t')) {
+                errors.push({
+                    line: i + 1,
+                    column: 1,
+                    message: 'Смешанные отступы: табы и пробелы в одной строке',
+                    severity: 'error'
+                });
+            } else {
+                const ch = leading[0];
+                if (!indentChar) indentChar = ch;
+                else if (indentChar !== ch) {
+                    errors.push({
+                        line: i + 1,
+                        column: 1,
+                        message: `Неоднородные отступы: ожидались ${indentChar === '\t' ? 'табы' : 'пробелы'}`,
+                        severity: 'error'
+                    });
+                }
+            }
         }
 
-        editorStatus.textContent = 'проверка…';
-        let errors = [];
+        errors.push(...scanCode(text, {
+            lineComment: '#',
+            blockComment: null,
+            quotes: [{
+                    delim: '"""',
+                    raw: true,
+                    multiline: true
+                },
+                {
+                    delim: "'''",
+                    raw: true,
+                    multiline: true
+                },
+                {
+                    delim: '"',
+                    raw: false,
+                    multiline: false
+                },
+                {
+                    delim: "'",
+                    raw: false,
+                    multiline: false
+                }
+            ]
+        }));
 
-        switch (lang) {
-            case 'html':
-            case 'htm':
-            case 'xml':
-            case 'svg':
-                errors = validateHTML(cleanedText, lang);
-                break;
-            case 'css':
-                errors = validateCSS(cleanedText);
-                break;
-            case 'javascript':
-                errors = validateJavaScript(cleanedText);
-                break;
-            case 'json':
-                errors = validateJSON(cleanedText);
-                break;
-            case 'bat':
-                errors = validateBat(cleanedText);
-                break;
-            case 'cpp':
-                errors = validateCpp(cleanedText);
-                break;
-            default:
-                errors = validateGeneric(cleanedText);
-                break;
+        if (!errors.length) {
+            errors.push({
+                line: 0,
+                column: 0,
+                message: 'Python синтаксис корректен (базовая проверка)',
+                severity: 'info'
+            });
         }
+        return errors;
+    }
 
-        displayResults(errors, lang);
-        lastResult = errors;
-        editorStatus.textContent = errors.length === 0 ? '✓ синтаксис верен' : '✗ найдены ошибки';
+    function validateGo(text) {
+        const errors = [];
+        if (!/^\s*package\s+\w+/m.test(text)) {
+            errors.push({
+                line: 1,
+                column: 1,
+                message: 'В Go-файле отсутствует объявление package',
+                severity: 'error'
+            });
+        }
+        errors.push(...scanCode(text, {
+            lineComment: '//',
+            blockComment: {
+                start: '/*',
+                end: '*/'
+            },
+            quotes: [{
+                    delim: '`',
+                    raw: true,
+                    multiline: true
+                },
+                {
+                    delim: '"',
+                    raw: false,
+                    multiline: false
+                },
+                {
+                    delim: "'",
+                    raw: false,
+                    multiline: false
+                }
+            ]
+        }));
+        if (!errors.length) {
+            errors.push({
+                line: 0,
+                column: 0,
+                message: 'Go синтаксис корректен (базовая проверка)',
+                severity: 'info'
+            });
+        }
+        return errors;
+    }
+
+    function validateRust(text) {
+        const errors = scanCode(text, {
+            lineComment: '//',
+            blockComment: {
+                start: '/*',
+                end: '*/'
+            },
+            quotes: [{
+                delim: '"',
+                raw: false,
+                multiline: false
+            }]
+        });
+        if (!errors.length) {
+            errors.push({
+                line: 0,
+                column: 0,
+                message: 'Rust синтаксис корректен (базовая проверка)',
+                severity: 'info'
+            });
+        }
+        return errors;
     }
 
     function validateHTML(text, lang) {
@@ -455,7 +670,7 @@
                     sourceType: 'module',
                     allowAwaitOutsideFunction: true,
                     allowReturnOutsideFunction: false,
-                    locations: true,
+                    locations: true
                 });
             } else {
                 new Function('"use strict";\n' + text);
@@ -523,10 +738,10 @@
     function validateBat(text) {
         const errors = [];
         let lineNum = 1;
-
         let inQuotes = false;
         let quoteLine = 1;
         let quoteCol = 1;
+
         for (let i = 0; i < text.length; i++) {
             const ch = text[i];
             if (ch === '\n') {
@@ -569,7 +784,6 @@
             if (inString) continue;
             if (ch === '(') {
                 if (parens === 0) {
-                    parenLine = parenLine;
                     parenCol = i - text.lastIndexOf('\n', i) + 1;
                 }
                 parens++;
@@ -603,13 +817,12 @@
                 severity: 'info'
             });
         }
-
         return errors;
     }
 
     function validateGeneric(text) {
         let allErrors = [];
-        const langs = ['html', 'css', 'javascript', 'json', 'bat'];
+        const langs = ['html', 'css', 'javascript', 'json', 'python', 'bat'];
         for (const l of langs) {
             let res;
             switch (l) {
@@ -624,6 +837,9 @@
                     break;
                 case 'json':
                     res = validateJSON(text);
+                    break;
+                case 'python':
+                    res = validatePython(text);
                     break;
                 case 'bat':
                     res = validateBat(text);
@@ -647,6 +863,65 @@
         return allErrors;
     }
 
+    function runCheck() {
+        const rawText = cm.getValue();
+        const cleanedText = cleanInput(rawText);
+        const lang = getEffectiveLang();
+
+        if (cleanedText.trim() === '') {
+            resultsBody.innerHTML = `<span class="empty">⏳ Вставьте код для проверки</span>`;
+            resultBadge.textContent = 'ожидание';
+            resultBadge.style.color = '#8b93a7';
+            editorStatus.textContent = 'пусто';
+            errorLines = [];
+            markErrorLines([]);
+            return;
+        }
+
+        editorStatus.textContent = 'проверка…';
+        let errors = [];
+
+        switch (lang) {
+            case 'html':
+            case 'htm':
+            case 'xml':
+            case 'svg':
+                errors = validateHTML(cleanedText, lang);
+                break;
+            case 'css':
+                errors = validateCSS(cleanedText);
+                break;
+            case 'javascript':
+                errors = validateJavaScript(cleanedText);
+                break;
+            case 'json':
+                errors = validateJSON(cleanedText);
+                break;
+            case 'python':
+                errors = validatePython(cleanedText);
+                break;
+            case 'go':
+                errors = validateGo(cleanedText);
+                break;
+            case 'rust':
+                errors = validateRust(cleanedText);
+                break;
+            case 'bat':
+                errors = validateBat(cleanedText);
+                break;
+            case 'cpp':
+                errors = validateCpp(cleanedText);
+                break;
+            default:
+                errors = validateGeneric(cleanedText);
+                break;
+        }
+
+        displayResults(errors, lang);
+        lastResult = errors;
+        editorStatus.textContent = errors.length === 0 ? '✓ синтаксис верен' : '✗ найдены ошибки';
+    }
+
     function displayResults(errors, lang) {
         const langMap = {
             html: 'HTML',
@@ -658,6 +933,9 @@
             svg: 'SVG',
             bat: 'BAT',
             cpp: 'C++',
+            python: 'Python',
+            go: 'Go',
+            rust: 'Rust',
             unknown: 'неопределён'
         };
         const langName = langMap[lang] || lang;
@@ -666,8 +944,7 @@
             resultsBody.innerHTML = `<span class="empty">✔️ Ошибок не найдено (${langName})</span>`;
             resultBadge.textContent = 'OK';
             resultBadge.style.color = '#6ee7b7';
-            errorLines = [];
-            updateLineNumbers([]);
+            markErrorLines([]);
             return;
         }
 
@@ -677,7 +954,7 @@
 
         const errorLinesArray = realErrors.map(e => e.line).filter(l => l > 0);
         errorLines = errorLinesArray;
-        updateLineNumbers(errorLinesArray);
+        markErrorLines(errorLinesArray);
 
         if (realErrors.length === 0 && warnings.length === 0) {
             resultsBody.innerHTML =
@@ -697,14 +974,13 @@
             const lineStr = err.line > 0 ? `стр. ${err.line}` : '—';
             const colStr = err.column > 0 ? `:${err.column}` : '';
             html += `
-                        <div class="error-item ${sevClass}">
-                            <span class="severity">${icon}</span>
-                            <span class="line">${lineStr}${colStr}</span>
-                            <span class="msg">${err.message}</span>
-                        </div>
-                    `;
+                <div class="error-item ${sevClass}">
+                    <span class="severity">${icon}</span>
+                    <span class="line">${lineStr}${colStr}</span>
+                    <span class="msg">${err.message}</span>
+                </div>
+            `;
         }
-
         resultsBody.innerHTML = html;
 
         let parts = [];
@@ -728,7 +1004,7 @@
     }
 
     function formatCode() {
-        const rawText = codeInput.value;
+        const rawText = cm.getValue();
         const text = cleanInput(rawText);
         const lang = getEffectiveLang();
 
@@ -760,6 +1036,11 @@
             case 'cpp':
                 errors = validateCpp(text);
                 break;
+            case 'python':
+            case 'go':
+            case 'rust':
+                editorStatus.textContent = '⚠️ форматирование для этого языка пока не поддерживается';
+                return;
             default:
                 errors = validateGeneric(text);
                 break;
@@ -829,10 +1110,10 @@
                     formatted = text;
                     break;
             }
-            codeInput.value = formatted;
-            errorLines = [];
-            updateLineNumbers([]);
+            cm.setValue(formatted);
+            markErrorLines([]);
             updateDetectedLang();
+            updateStats();
             editorStatus.textContent = '✓ отформатировано';
         } catch (e) {
             editorStatus.textContent = '⚠️ ошибка форматирования: ' + e.message;
@@ -840,7 +1121,7 @@
     }
 
     function copyCode() {
-        const text = codeInput.value;
+        const text = cm.getValue();
         if (!text) {
             editorStatus.textContent = 'нечего копировать';
             return;
@@ -887,17 +1168,11 @@
     }
 
     checkBtn.addEventListener('click', runCheck);
-    codeInput.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            runCheck();
-        }
-    });
 
     clearBtn.addEventListener('click', () => {
-        codeInput.value = '';
+        cm.setValue('');
         errorLines = [];
-        updateLineNumbers([]);
+        markErrorLines([]);
         updateDetectedLang();
         resultsBody.innerHTML = `<span class="empty">Вставьте код в редактор и нажмите «Проверить»</span>`;
         resultBadge.textContent = 'ожидание';
@@ -922,15 +1197,19 @@
                 xml: 'XML',
                 svg: 'SVG',
                 bat: 'BAT',
-                cpp: 'C++'
+                cpp: 'C++',
+                python: 'Python',
+                go: 'Go',
+                rust: 'Rust'
             };
             detectedLang.textContent = '🔍 ' + (map[manual] || manual);
+            setEditorMode(manual);
         } else {
             updateDetectedLang();
         }
     });
 
-    updateLineNumbers([]);
+    markErrorLines([]);
     updateDetectedLang();
     updateStats();
 
